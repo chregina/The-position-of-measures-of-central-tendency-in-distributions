@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>משחקי מדדי מרכז בהתפלגויות</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Rubik', sans-serif;
+            background-color: #f0fdf4;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .correct-pulse {
+            animation: correctPulse 0.5s;
+        }
+        @keyframes correctPulse {
+            0% { transform: scale(1); background-color: #dcfce7; }
+            50% { transform: scale(1.05); background-color: #86efac; }
+            100% { transform: scale(1); background-color: #dcfce7; }
+        }
+        .wrong-shake {
+            animation: wrongShake 0.5s;
+        }
+        @keyframes wrongShake {
+            0%, 100% { transform: translateX(0); background-color: #fee2e2; }
+            25% { transform: translateX(-5px); background-color: #fca5a5; }
+            75% { transform: translateX(5px); background-color: #fca5a5; }
+        }
+        /* SVG Graph Styles */
+        .graph-line {
+            fill: none;
+            stroke: #3b82f6;
+            stroke-width: 3;
+            stroke-linecap: round;
+        }
+        .axis-line {
+            stroke: #94a3b8;
+            stroke-width: 2;
+        }
+        .dashed-line {
+            stroke: #64748b;
+            stroke-width: 1.5;
+            stroke-dasharray: 4,4;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // --- Shared SVG Components for Graphs ---
+        const SymmetricGraph = () => (
+            <svg viewBox="0 0 200 120" className="w-full max-w-[250px] mx-auto h-auto drop-shadow-md">
+                <path d="M 20 100 C 50 100 70 20 100 20 C 130 20 150 100 180 100" className="graph-line" />
+                <line x1="10" y1="100" x2="190" y2="100" className="axis-line" />
+            </svg>
+        );
+
+        const RightSkewGraph = () => (
+            <svg viewBox="0 0 200 120" className="w-full max-w-[250px] mx-auto h-auto drop-shadow-md">
+                <path d="M 20 100 C 40 100 45 20 65 20 C 95 20 140 90 180 100" className="graph-line" />
+                <line x1="10" y1="100" x2="190" y2="100" className="axis-line" />
+            </svg>
+        );
+
+        const LeftSkewGraph = () => (
+            <svg viewBox="0 0 200 120" className="w-full max-w-[250px] mx-auto h-auto drop-shadow-md">
+                <path d="M 20 100 C 60 90 105 20 135 20 C 155 20 160 100 180 100" className="graph-line" />
+                <line x1="10" y1="100" x2="190" y2="100" className="axis-line" />
+            </svg>
+        );
+
+        const shuffleArray = (array) => {
+            let newArray = [...array];
+            for (let i = newArray.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+            }
+            return newArray;
+        };
+
+        const Game6Unified = () => {
+            const baseQuestions = [
+                {
+                    type: 'selection',
+                    condition: "השכיח < חציון < ממוצע",
+                    description: "כשהממוצע הוא הגדול ביותר (מושפע מערכים גבוהים), ההתפלגות משוכה ימינה.",
+                    correct: "right"
+                },
+                {
+                    type: 'placement',
+                    title: "גררו את המדדים למקום הנכון",
+                    graph: "right",
+                    description: "בהתפלגות עם זנב ימני, השכיח נמצא בפסגה (הכי הרבה תצפיות), הממוצע נמשך ימינה לעבר הזנב, והחציון ביניהם.",
+                    correct: ["השכיח", "חציון", "ממוצע"]
+                },
+                {
+                    type: 'selection',
+                    condition: "ממוצע < חציון < השכיח",
+                    description: "כשהממוצע הוא הקטן ביותר ונמשך כלפי מטה, מדובר בהתפלגות עם זנב שמאלי.",
+                    correct: "left"
+                },
+                {
+                    type: 'placement',
+                    title: "גררו את המדדים למקום הנכון",
+                    graph: "left",
+                    description: "בהתפלגות עם זנב שמאלי, הממוצע נמשך שמאלה אל הזנב, השכיח נמצא בפסגה (מימין), והחציון ביניהם.",
+                    correct: ["ממוצע", "חציון", "השכיח"]
+                },
+                {
+                    type: 'selection',
+                    condition: "ממוצע = חציון = השכיח",
+                    description: "בהתפלגות פעמון סימטרית, כל המדדים מתלכדים במרכז ההתפלגות.",
+                    correct: "sym"
+                },
+                {
+                    type: 'placement',
+                    title: "גררו את המדדים למקום הנכון",
+                    graph: "right",
+                    description: "בהתפלגות עם זנב ימני, השכיח נמצא בפסגה (משמאל), הממוצע נמשך ימינה לזנב, והחציון באמצע.",
+                    correct: ["השכיח", "חציון", "ממוצע"]
+                },
+                {
+                    type: 'selection',
+                    condition: "השכיח הוא המדד הגדול ביותר",
+                    description: "בזנב שמאלי, רוב התצפיות מתרכזות בצד הגבוה של הציר, ולכן השכיח הוא הגדול ביותר (הכי ימני).",
+                    correct: "left"
+                },
+                {
+                    type: 'placement',
+                    title: "גררו את המדדים למקום הנכון",
+                    graph: "left",
+                    description: "בהתפלגות עם זנב שמאלי, הממוצע נמשך שמאלה אל הזנב, השכיח נמצא בפסגה (מימין), והחציון באמצע.",
+                    correct: ["ממוצע", "חציון", "השכיח"]
+                },
+                {
+                    type: 'selection',
+                    condition: "הממוצע הוא המדד הגדול ביותר",
+                    description: "בזנב ימני, הערכים הקיצוניים הגבוהים מושכים את הממוצע אליהם (ימינה), ולכן הוא הגדול ביותר.",
+                    correct: "right"
+                },
+                {
+                    type: 'placement',
+                    title: "גררו את המדדים למקום הנכון",
+                    graph: "right",
+                    description: "בהתפלגות עם זנב ימני, השכיח נמצא בפסגה (משמאל), הממוצע נמשך ימינה לזנב, והחציון באמצע.",
+                    correct: ["השכיח", "חציון", "ממוצע"]
+                },
+                {
+                    type: 'selection',
+                    condition: "מחירי דירות: הרוב במחיר רגיל, אך אחוזות פאר מקפיצות את הממוצע כלפי מעלה.",
+                    description: "הערכים הקיצוניים הגבוהים (אחוזות הפאר) יוצרים זנב ימני שמושך את הממוצע כלפי מעלה.",
+                    correct: "right"
+                },
+                {
+                    type: 'selection',
+                    condition: "ציונים במבחן קל: הרוב קיבלו ציון גבוה, מעטים נכשלו ומשכו את הממוצע מטה.",
+                    description: "הציונים הנמוכים של הבודדים יוצרים זנב שמאלי שמושך את הממוצע כלפי מטה.",
+                    correct: "left"
+                },
+                {
+                    type: 'selection',
+                    condition: "גובה באוכלוסייה: הרוב סביב הממוצע, ויש מיעוט זהה של גבוהים ונמוכים במיוחד.",
+                    description: "זוהי התפלגות סימטרית (פעמון) שבה הפיזור שווה משני צידי המרכז.",
+                    correct: "sym"
+                },
+                {
+                    type: 'selection',
+                    condition: "שעות צפייה: הרוב צופים מעט, אך יש קבוצה קטנה שצופה המון שעות.",
+                    description: "הקבוצה שצופה המון שעות מהווה ערכים קיצוניים גבוהים היוצרים זנב ימני.",
+                    correct: "right"
+                },
+                {
+                    type: 'selection',
+                    condition: "גיל בכנס גמלאים: הרוב מבוגרים מאוד, אך הגיעו גם מעט צעירים מאוד.",
+                    description: "הצעירים הבודדים הם ערכים קיצוניים נמוכים המושכים את הממוצע שמאלה (זנב שמאלי).",
+                    correct: "left"
+                },
+                {
+                    type: 'ineq_placement',
+                    sentence: "זמני המתנה במוקד: רוב השיחות נענות מהר, אך יש מעט שיחות ארוכות מאוד.",
+                    description: "השיחות הארוכות יוצרות זנב ימני שמושך את הממוצע כלפי מעלה, לכן הממוצע הוא הגדול ביותר.",
+                    correct: ["השכיח", "חציון", "ממוצע"]
+                },
+                {
+                    type: 'ineq_placement',
+                    sentence: "ציונים במבחן גמר קל: הרוב הוציאו מעל 80, אך בודדים נכשלו.",
+                    description: "הבודדים שנכשלו יוצרים זנב שמאלי שמושך את הממוצע כלפי מטה, לכן הממוצע הוא הקטן ביותר.",
+                    correct: ["ממוצע", "חציון", "השכיח"]
+                },
+                {
+                    type: 'ineq_placement',
+                    sentence: "שכר בחברת הייטק: רוב העובדים מרוויחים שכר התחלתי, אך קומץ מנהלים מרוויחים סכומי עתק.",
+                    description: "מנהלים המרוויחים סכומי עתק יוצרים זנב ימני, המושך את הממוצע למעלה.",
+                    correct: ["השכיח", "חציון", "ממוצע"]
+                },
+                {
+                    type: 'ineq_placement',
+                    sentence: "גיל הפרישה במדינה: הרוב פורשים בגיל 67, אבל יש מיעוט שפורש מוקדם יותר מסיבות בריאות.",
+                    description: "הפורשים מוקדם יוצרים זנב שמאלי (ערכים נמוכים קיצוניים), המושכים את הממוצע מטה.",
+                    correct: ["ממוצע", "חציון", "השכיח"]
+                },
+                {
+                    type: 'ineq_placement',
+                    sentence: "כמות תאונות דרכים ביום: ברוב הימים יש מעט תאונות, אך בימים נדירים יש מספר רב של תאונות.",
+                    description: "ימים נדירים עם הרבה תאונות מהווים ערכים גבוהים קיצוניים (זנב ימני) שמגדילים את הממוצע.",
+                    correct: ["השכיח", "חציון", "ממוצע"]
+                }
+            ];
+
+            const [questions, setQuestions] = useState(() => shuffleArray(baseQuestions));
+            const [currentQ, setCurrentQ] = useState(0);
+            const [score, setScore] = useState(0);
+            const [isFinished, setIsFinished] = useState(false);
+            const [answered, setAnswered] = useState(false);
+            const [isCorrectAnswer, setIsCorrectAnswer] = useState(false);
+            
+            const [selFeedback, setSelFeedback] = useState(null); 
+            const [placed, setPlaced] = useState([null, null, null]);
+            const [draggedItem, setDraggedItem] = useState(null);
+            const [selectedItem, setSelectedItem] = useState(null); 
+
+            const options = ["ממוצע", "חציון", "השכיח"];
+
+            const resetLevel = () => {
+                setAnswered(false);
+                setIsCorrectAnswer(false);
+                setSelFeedback(null);
+                setPlaced([null, null, null]);
+                setDraggedItem(null);
+                setSelectedItem(null);
+            };
+
+            const advanceQ = () => {
+                if (currentQ < questions.length - 1) {
+                    setCurrentQ(currentQ + 1);
+                    resetLevel();
+                } else {
+                    setIsFinished(true);
+                }
+            };
+
+            const handleSelectGraph = (graphType) => {
+                if (answered) return;
+                const q = questions[currentQ];
+                const isCorrect = graphType === q.correct;
+                
+                setSelFeedback({ selected: graphType });
+                setIsCorrectAnswer(isCorrect);
+                if (isCorrect) setScore(s => s + 1);
+                setAnswered(true);
+            };
+
+            const handleDragStart = (e, item) => {
+                if (answered) { e.preventDefault(); return; }
+                setDraggedItem(item);
+                setSelectedItem(null);
+            };
+
+            const handleDrop = (e, idx) => {
+                e.preventDefault();
+                if (answered || !draggedItem) return;
+                
+                let newPlaced = [...placed];
+                const oldIdx = newPlaced.indexOf(draggedItem);
+                
+                if (oldIdx !== -1) {
+                    newPlaced[oldIdx] = newPlaced[idx]; 
+                }
+                newPlaced[idx] = draggedItem;
+                
+                setPlaced(newPlaced);
+                setDraggedItem(null);
+            };
+
+            const handleItemClick = (item) => {
+                if (answered || placed.includes(item)) return; 
+                if (selectedItem === item) setSelectedItem(null);
+                else setSelectedItem(item);
+            };
+
+            const handleSlotClick = (idx) => {
+                if (answered) return;
+                if (selectedItem) {
+                    let newPlaced = [...placed];
+                    const oldIdx = newPlaced.indexOf(selectedItem);
+                    if (oldIdx !== -1) newPlaced[oldIdx] = newPlaced[idx];
+                    newPlaced[idx] = selectedItem;
+                    setPlaced(newPlaced);
+                    setSelectedItem(null);
+                } else if (placed[idx]) {
+                    setSelectedItem(placed[idx]);
+                    let newPlaced = [...placed];
+                    newPlaced[idx] = null;
+                    setPlaced(newPlaced);
+                }
+            };
+
+            const handleCheckPlacement = () => {
+                if (answered) return;
+                const q = questions[currentQ];
+                const isCorrect = placed[0] === q.correct[0] && placed[1] === q.correct[1] && placed[2] === q.correct[2];
+                
+                setIsCorrectAnswer(isCorrect);
+                if (isCorrect) setScore(s => s + 1);
+                setAnswered(true);
+            };
+
+            if (isFinished) {
+                const percentage = (score / questions.length) * 100;
+                let feedbackMsg = "";
+                let iconClass = "fas fa-trophy";
+                let iconColor = "text-indigo-500";
+
+                if (percentage === 100) {
+                    feedbackMsg = "מושלם! שליטה יוצאת מן הכלל בחומר!";
+                    iconClass = "fas fa-crown";
+                    iconColor = "text-yellow-500";
+                } else if (percentage >= 80) {
+                    feedbackMsg = "כל הכבוד! הבנה טובה מאוד של מדדי המרכז בהתפלגויות.";
+                    iconClass = "fas fa-medal";
+                    iconColor = "text-blue-500";
+                } else if (percentage >= 60) {
+                    feedbackMsg = "עבודה טובה! עוד קצת תרגול ותהיו אלופים.";
+                    iconClass = "fas fa-thumbs-up";
+                    iconColor = "text-green-500";
+                } else {
+                    feedbackMsg = "לא נורא! המשחק הוא הזדמנות מצוינת לתרגל ולהשתפר.";
+                    iconClass = "fas fa-star-half-alt";
+                    iconColor = "text-orange-500";
+                }
+
+                return (
+                    <div className="bg-white p-6 rounded-2xl shadow-lg text-center fade-in max-w-lg mx-auto border-t-4 border-indigo-500">
+                        <div className={`text-6xl ${iconColor} mb-4`}><i className={iconClass}></i></div>
+                        <h2 className="text-3xl font-bold text-gray-800 mb-4">סיימת את המשחק!</h2>
+                        <p className="text-xl mb-4">הניקוד שלך: <span className="font-bold text-indigo-600">{score}</span> / <span className="font-bold">{questions.length}</span></p>
+                        <p className="text-lg text-gray-700 mb-8 font-medium bg-gray-50 p-4 rounded-xl border border-gray-100 shadow-sm">{feedbackMsg}</p>
+                        <button onClick={() => { setQuestions(shuffleArray(baseQuestions)); setCurrentQ(0); setScore(0); setIsFinished(false); resetLevel(); }} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-full transition-all text-lg shadow-md hover:shadow-lg">
+                            שחקו שוב <i className="fas fa-redo ml-2"></i>
+                        </button>
+                    </div>
+                );
+            }
+
+            const q = questions[currentQ];
+
+            return (
+                <div className="bg-white p-6 md:p-8 rounded-2xl shadow-lg fade-in max-w-4xl mx-auto border-t-4 border-indigo-500 relative">
+                    
+                    {/* Header: Progress & Score */}
+                    <div className="flex justify-between items-center mb-6">
+                        <div className="text-sm md:text-base font-bold bg-indigo-100 text-indigo-800 px-4 py-2 rounded-full shadow-sm">
+                            שאלה {currentQ + 1} מתוך {questions.length}
+                        </div>
+                        <div className="text-sm md:text-base font-bold bg-green-100 text-green-800 px-4 py-2 rounded-full shadow-sm flex items-center">
+                            <i className="fas fa-check-circle text-green-600 ml-2"></i>
+                            תשובות נכונות: {score}
+                        </div>
+                    </div>
+
+                    <div className="text-center mb-6">
+                        <h2 className="text-2xl font-bold text-gray-800 mb-2">
+                            {q.type === 'selection' ? "בחרו את הגרף המתאים" : "מקמו את המדדים במקום הנכון"}
+                        </h2>
+                    </div>
+
+                    {q.type === 'selection' && (
+                        <div className="fade-in">
+                            <div className="bg-gray-50 p-6 rounded-2xl border-2 border-gray-200 mb-8 text-center shadow-inner">
+                                <p className="text-2xl md:text-3xl font-black text-indigo-900" dir="ltr">{q.condition}</p>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                {['right', 'sym', 'left'].map(type => (
+                                    <div 
+                                        key={type}
+                                        onClick={() => handleSelectGraph(type)}
+                                        className={`rounded-2xl p-4 border-4 transition-all bg-white shadow-sm 
+                                            ${selFeedback?.selected === type && isCorrectAnswer ? 'border-green-500 bg-green-50 correct-pulse' : ''}
+                                            ${selFeedback?.selected === type && !isCorrectAnswer ? 'border-red-500 bg-red-50 wrong-shake' : ''}
+                                            ${(!selFeedback || selFeedback.selected !== type) && !answered ? 'border-transparent hover:border-indigo-300 cursor-pointer hover:shadow-md' : 'border-transparent'}
+                                            ${answered ? 'cursor-not-allowed opacity-80' : ''}
+                                        `}
+                                    >
+                                        <div className="pointer-events-none">
+                                            {type === 'right' && <RightSkewGraph />}
+                                            {type === 'sym' && <SymmetricGraph />}
+                                            {type === 'left' && <LeftSkewGraph />}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {q.type === 'placement' && (
+                        <div className="fade-in text-center">
+                            <p className="text-lg font-medium text-gray-700 mb-6">{q.title}</p>
+                            
+                            <div className="mb-6 relative">
+                                {q.graph === 'right' && <RightSkewGraph />}
+                                {q.graph === 'left' && <LeftSkewGraph />}
+                                
+                                <div className="flex justify-center space-x-6 mt-4 relative z-10" dir="ltr">
+                                    {[0, 1, 2].map(idx => (
+                                        <div 
+                                            key={idx}
+                                            onDragOver={e => e.preventDefault()}
+                                            onDrop={e => handleDrop(e, idx)}
+                                            onClick={() => handleSlotClick(idx)}
+                                            className={`w-24 h-12 border-2 border-dashed rounded-lg flex items-center justify-center transition-colors
+                                                ${placed[idx] ? 'border-indigo-500 bg-indigo-50' : selectedItem && !answered ? 'border-indigo-300 bg-indigo-50 hover:bg-indigo-100' : 'border-gray-300 bg-gray-50'}
+                                                ${answered ? 'cursor-not-allowed' : 'cursor-pointer'}
+                                            `}
+                                        >
+                                            {placed[idx] ? <span className="font-bold text-indigo-700">{placed[idx]}</span> : <span className="text-gray-400 text-xs">לחץ/גרור</span>}
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="flex justify-center space-x-8 mt-2 text-xs text-gray-400" dir="ltr">
+                                    <span>נמוך בציר</span>
+                                    <span>אמצע</span>
+                                    <span>גבוה בציר</span>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-center space-x-4 space-x-reverse mb-8">
+                                {options.map(opt => (
+                                    <div
+                                        key={opt}
+                                        draggable={!placed.includes(opt) && !answered}
+                                        onDragStart={e => handleDragStart(e, opt)}
+                                        onClick={() => handleItemClick(opt)}
+                                        className={`px-5 py-2 rounded-full font-bold text-sm transition-all border-2
+                                            ${placed.includes(opt) ? 'opacity-30 border-gray-300 bg-gray-100 text-gray-400' : 
+                                              selectedItem === opt ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg scale-110' : 
+                                              'bg-white border-indigo-500 text-indigo-700'}
+                                            ${!placed.includes(opt) && !answered ? 'cursor-pointer hover:bg-indigo-50' : 'cursor-not-allowed'}
+                                        `}
+                                    >
+                                        {opt}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {!answered && (
+                                <button 
+                                    onClick={handleCheckPlacement}
+                                    disabled={placed.includes(null)}
+                                    className={`px-8 py-3 rounded-xl font-bold text-white transition-all w-full md:w-auto
+                                        ${placed.includes(null) ? 'bg-gray-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 shadow-md'}
+                                    `}
+                                >
+                                    בדוק מיקום
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    {q.type === 'ineq_placement' && (
+                        <div className="fade-in text-center">
+                            <p className="text-xl font-medium text-indigo-900 mb-6 bg-indigo-50 p-5 rounded-2xl border-2 border-indigo-100 shadow-inner">{q.sentence}</p>
+                            <p className="text-lg font-bold text-gray-700 mb-6">גררו את המדדים למקום הנכון באי השוויון:</p>
+                            
+                            <div className="flex justify-center items-center mb-10" dir="ltr">
+                                {[0, 1, 2].map((idx) => (
+                                    <div key={idx} className="flex items-center">
+                                        <div 
+                                            onDragOver={e => e.preventDefault()}
+                                            onDrop={e => handleDrop(e, idx)}
+                                            onClick={() => handleSlotClick(idx)}
+                                            className={`w-24 md:w-28 h-14 border-2 border-dashed rounded-xl flex items-center justify-center transition-colors shadow-sm
+                                                ${placed[idx] ? 'border-indigo-500 bg-indigo-50' : selectedItem && !answered ? 'border-indigo-300 bg-indigo-50 hover:bg-indigo-100' : 'border-gray-300 bg-gray-50'}
+                                                ${answered ? 'cursor-not-allowed' : 'cursor-pointer'}
+                                            `}
+                                        >
+                                            {placed[idx] ? <span className="font-bold text-indigo-700">{placed[idx]}</span> : <span className="text-gray-400 text-xs md:text-sm">לחץ/גרור</span>}
+                                        </div>
+                                        {idx < 2 && <span className="text-2xl md:text-3xl font-black text-gray-400 mx-2 md:mx-4">&lt;</span>}
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="flex justify-center space-x-4 space-x-reverse mb-8">
+                                {options.map(opt => (
+                                    <div
+                                        key={opt}
+                                        draggable={!placed.includes(opt) && !answered}
+                                        onDragStart={e => handleDragStart(e, opt)}
+                                        onClick={() => handleItemClick(opt)}
+                                        className={`px-6 py-2 rounded-full font-bold text-sm md:text-base transition-all border-2
+                                            ${placed.includes(opt) ? 'opacity-30 border-gray-300 bg-gray-100 text-gray-400' : 
+                                              selectedItem === opt ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg scale-110' : 
+                                              'bg-white border-indigo-500 text-indigo-700'}
+                                            ${!placed.includes(opt) && !answered ? 'cursor-pointer hover:bg-indigo-50' : 'cursor-not-allowed'}
+                                        `}
+                                    >
+                                        {opt}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {!answered && (
+                                <button 
+                                    onClick={handleCheckPlacement}
+                                    disabled={placed.includes(null)}
+                                    className={`px-10 py-3 rounded-xl font-bold text-white transition-all w-full md:w-auto text-lg
+                                        ${placed.includes(null) ? 'bg-gray-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 shadow-md'}
+                                    `}
+                                >
+                                    בדוק מיקום
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Feedback and Next Block */}
+                    {answered && (
+                        <div className={`mt-8 p-6 rounded-2xl border-2 fade-in text-center shadow-md ${
+                            isCorrectAnswer ? 'bg-green-50 border-green-400' : 'bg-red-50 border-red-400'
+                        }`}>
+                            <h3 className={`text-2xl font-bold mb-3 ${isCorrectAnswer ? 'text-green-700' : 'text-red-700'}`}>
+                                {isCorrectAnswer ? <span><i className="fas fa-check-circle"></i> תשובה נכונה!</span> : <span><i className="fas fa-times-circle"></i> תשובה שגויה</span>}
+                            </h3>
+                            <div className="text-lg text-gray-800 mb-6 font-medium bg-white p-4 rounded-xl shadow-sm border border-gray-100 text-right">
+                                {q.description}
+                                {q.type !== 'selection' && !isCorrectAnswer && (
+                                    <span className="block mt-4 pt-3 font-bold text-indigo-700 text-xl border-t border-gray-200 text-center" dir="ltr">
+                                        הסדר הנכון: {q.correct.join(' < ')}
+                                    </span>
+                                )}
+                            </div>
+                            
+                            <p className="text-md font-bold mb-5 text-indigo-900 bg-indigo-100 inline-block px-5 py-2 rounded-full">
+                                סה"כ תשובות נכונות: {score} מתוך {currentQ + 1}
+                            </p>
+                            <br />
+
+                            <button 
+                                onClick={advanceQ}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-full transition-all text-lg shadow-md hover:shadow-lg w-full md:w-auto"
+                            >
+                                {currentQ < questions.length - 1 ? 'המשך לשאלה הבאה' : 'לסיום המשחק ולתוצאות'} <i className="fas fa-arrow-left mr-2"></i>
+                            </button>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const App = () => {
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-100 pb-12">
+                    {/* Header */}
+                    <header className="bg-white shadow-sm mb-8 relative border-b-4 border-indigo-500">
+                        <div className="max-w-5xl mx-auto px-4 py-6 text-center">
+                            <h1 className="text-3xl md:text-4xl font-black text-gray-800 tracking-tight">
+                                <i className="fas fa-chart-line text-indigo-500 ml-3"></i>
+                                מיקום מדדי המרכז בהתפלגויות
+                            </h1>
+                            <p className="mt-2 text-gray-600 font-medium text-lg">הוכן על ידי רגינה צ'ולסקי</p>
+                        </div>
+                    </header>
+
+                    {/* Main Container */}
+                    <main className="max-w-5xl mx-auto px-4">
+                        <Game6Unified />
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
